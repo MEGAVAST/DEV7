@@ -1,0 +1,1134 @@
+### Dev7 studio \\\ - v7.22 -  22/3/2023
+### \\\ MEGAVAST DEV7 studio project 
+
+sub load_parameters { 
+    $project="MEGAVAST DEV7";
+    $file_name="dev7";
+    our $path = "/var/www/cgi-bin/MEGAVAST/CMS";
+    our $html_dir = "$path/CODE";
+    our $code_dir = "$path/CODE";
+    our $code_dir_backup = "$path/CODE/BACKUP";    ### code main backup directory - can be few directories of backup
+    our $log_path = "$path/LOG/";                  ### log directory
+    our $html_path = "/var/www/html/CMS";
+    $url="https://www.megavast.com/cms";
+    $images_url="https://www.megavast.com/images";
+
+    $editor_choice = $query->param('edit');  if (!$editor_choice) {$editor_choice="home"; }
+    $content = $query->param('content');         #### for saving the changes after post
+    $save_page = $query->param('save_page'); if ($save_page) { $page=$save_page;  }  ### page to save 
+    $page = $query->param('page');              
+        if ($save_page) { $page=$save_page;  }   ### page to save
+        if ($page =~ m/pl/ or $page =~ m/txt/ or $page =~ m/py/){ } #else{ $page="readme.txt"; }
+        if ($page =~ m/BACKUP/){ $page =~s/ /+/gi; }
+    $lang = $query->param('lang'); 
+        if ($lang =~ m/pl/) {$lang="perl"; }
+        elsif ($lang =~ m/python/) {$lang="py"; }
+        else {$lang="perl";}
+
+     our $pass = $query->param('p');    ## passowd for use
+
+    our $directory_id = $query->param('d');  $directory_id =~ s/[^-\w_\/]//sg;  ### all the directory list from the url
+    our $project_id = $query->param('pro');    ## project name is there is
+
+    #### build url 
+    if ($directory_id) { $url_directory_id="d=$directory_id"; }  ### if directory id - add it to the url 
+    if ($pass) { $url_password="p=$pass"; }                      ### ifther is password add it into the url
+    our $url_parameters=qq~$url_directory_id&$url_password~;    #### for use in any url <a href=?$url_parameters @@@@@@
+
+    $date=`date -Is`; chomp $date;
+}
+
+############################## start :-) 
+load_parameters();
+html_elements();   html_images();
+get_pages();      ### needed for every page
+html_start();
+print_left_menu();
+
+if ($editor_choice eq "home")       { readme_md(); print_menu(); get_page_info();  } 
+if ($editor_choice eq "editor1")    { get_page_info(); load_page_code(); editor_visual(); }
+if ($editor_choice eq "recover")    { recover_html(); }
+if ($editor_choice eq "images")     { show_images (); upload_images(); }
+if ($editor_choice eq "editor2")    { load_page_code(); get_page_info();  editor_text_2(); }
+if ($editor_choice eq "editor3")    { load_page_code(); get_page_info();  editor3(); }
+if ($editor_choice eq "new")        {editor_text(); print "<center>$img_helper;"}
+if ($editor_choice eq "tools")      { print_tools(); }
+if ($editor_choice eq "search")     { print_search(); }
+if ($editor_choice eq "refactor")   { load_page_code(); refactor ();  }
+if ($editor_choice eq "wizard")     { load_wizard();   } 
+
+form_save();
+print_bottom();
+
+########################### finished :-) 
+
+sub get_pages {  ### get all the code files and folders and print for menus
+
+    our $sort = $query->param('sort');  our $sort_line = $sort eq "time" ? "-t" : "";   ### check this funck all the directory list from the url
+     if (!$directory_id){   $directory_id = $query->param('dir'); } ### all the directory list from the url
+
+    our $code_dir2 = $code_dir; #### not for sure to use it. 
+    @directory_url_list;        ### to split the directories from url  d=/dir1/dir2/dir3/dir4
+    $directory_counter;         #### how mant directory there are in the url 
+    $print_header_directory;    ### the link for directory lists on menu
+    $directory_tmp;             ### tmp use foreach 
+    @directory_list;            ### directories list in disk
+    $code_file_name;            ### the code file name
+    $code_file_edit_time;       ### code file last edit time
+    @directory_files_list;      ##### list of file codes from the correct directory
+    $code_dir_disk;              ### what is the directory we are working on now 
+
+    ########## start proccess 
+    $print_header_directory=qq~<a href="?d=/">PROJECTS </a> ~; #### will print ///  [directory] / [directory2]
+
+  if ($directory_id){   
+     $directory_id =~ s/^\.\.\///gi;  $directory_id =~ s/\..$//gi;  #### security protection
+     $directory_id =~ s/^\///gi;     ### if it start with / take it down 
+     our @directory_url_list = split('/', $directory_id);
+    
+     foreach (@directory_url_list){  $directory_tmp = $_; 
+        if (!$project_id) {$project_id=$directory_tmp; }  ### if no project_id copy from the first directory
+        $directory_counter=$directory_counter+1;  
+        $directory_corrent="$directory_corrent/$directory_tmp";
+        $print_header_directory.=qq~ / <a href="?d=$directory_corrent">$directory_tmp</a>~;  ### add it to the loop 
+     }
+    }
+        
+   $code_dir_disk="$code_dir/$directory_corrent"; 
+
+    ###### get codes directory lists from the disk
+    opendir(DIR, $code_dir_disk) or $print_error.="Cannot open directory $code_dir_disk: $!";
+    @directory_list = grep { -d "$code_dir_disk/$_" && !/^\./ } readdir(DIR);
+    closedir(DIR);
+
+        foreach $directory (@directory_list) {    ### list of directories from the project directory or inside directory 
+            $code_project_directory_name = $directory;  #### directory from the folder list
+            $code_project_directory_name =~ s/^$code_dir//i; #### remove the path from the directory 
+
+        ############## write direcoty into menu list
+            if (!$directory_id) { $code_project_url="?d=/$directory";}  ### no directory id  add the corrent directory /
+            elsif ($directory_id) { $code_project_url="?d=$directory_corrent/$directory"; }  ### there isdirectory_id add the /directory_id/directory 
+            
+            $pages_list.=qq~<tr><td><a href="$code_project_url" title="Last edit time $code_file_edit_time"> $img_librery $code_project_directory_name </a></td>
+                            <td> <font color="#e0e0eb" size=2>  last edit : $code_file_edit_time</font></tr>~; #### main menu
+        }
+
+    ######## get code pages list 
+    ### for sort ls by time add ls -lt  ?sort=time
+    #@directory_files_list=`ls -l $sort_line $code_dir_disk/ |grep -E '.pl|.txt|.py|.js|.html|.sh' | grep -v '.recommand' |grep -v '.refactor' |grep -v '.info'`;
+    @directory_files_list=`ls -l $sort_line $code_dir_disk/  |grep -v "dr" | grep -v '.recommand' |grep -v '.refactor' |grep -v '.info' | grep -v "total"`;  ## all files
+        foreach(@directory_files_list) {
+            chomp $_;
+            @code_files_data= split(' ', $_); ### split te lines for the ls data
+            $code_file_name=@code_files_data[8];  ##### get the file name from the line
+            $code_file_edit_time="@code_files_data[5,6,7]"; ### get the last edit time from the line
+            
+
+            #### defind the icon and the lang of the page code lang
+            if ($code_file_name =~ /\.pl$/) { $img_code_icon="$img_perl_icon";               $code_lang="perl";}  
+            elsif ($code_file_name =~ /\.py$/) { $img_code_icon="$img_python_icon";          $code_lang="python";}
+            elsif ($code_file_name =~ /\.sh$/) { $img_code_icon="$img_sh_icon";              $code_lang="sh";}
+            elsif ($code_file_name =~ /\.js$|\.json$/)  { $img_code_icon="$img_js_icon";     $code_lang="json";}
+            else                          { $img_code_icon="$img_html_icon";                  $code_lang="text";}
+
+            if ($code_file_name =~ "README.md"){ $readme_md=`cat $code_dir_disk/$code_file_name`; }
+
+            ###### print the code file list for the menu pages and for the left menu
+            $pages_list.=qq~<tr><td><a href="?$url_parameters&page=$code_file_name&edit=editor2&lang=$code_lang$url_directory" title="Last edit time $code_file_edit_time"> $img_code_icon $code_file_name </a></td>
+                         <td> <font color="#cbced2" size=2>  last edit : $code_file_edit_time </font></tr>~; #### main menu
+            $pages_list3.=qq~<a href="?$url_parameters&page=$code_file_name&edit=editor2&lang=$code_lang$url_directory" title="Last edit time $code_file_edit_time"> $img_code_icon $code_file_name </a>~; #### pages list for left menu
+        }
+}
+
+sub load_page_code {    ##### loading code file
+
+   $code_directory="$code_dir/$directory_id";
+
+    ############## load code page from cgi or /www/html
+    if ($content) { $page_html=$content;  }  
+        else {  
+            $file="$code_directory/$page";
+            #open (FILE, '<', $file) or return;   while(<FILE>) {  $page_html.= "$_"; }  close FILE;
+            $page_html=`cat '$file'`;
+            chomp $page_html;
+        }       
+
+    if (!$page_html) {  $print_error.="<br> $code_directory/$page is not exist or empty"; }
+
+    $page_html=~s/&lt/</gi;
+    # $page_html=~s/\`/&#96;/g;
+    $page_html=~s/([\`])/\\$1/g;
+
+   # $print_error.=" <br><br> project_id=$project_id <br> directory_id=$directory_id <br>  code_dir=$code_directory<br>  ";
+
+}
+
+sub get_page_info {   #### get info about page code - refactor recommand or info -   $page_code_refactor  $page_code_recommand $page_code_info
+
+    $page_code_refactor;             #  the code for refactoring the given page.
+    $page_code_recommand;            #  code recommendations for the given page.
+    $page_code_info;                 #  information about the code for the given page.
+    $code_dir_disk;                  #  the directory path for the given code.
+    $page;                          #  the name of the page being processed.
+    $directory_id;                  #  the ID of the directory containing the page.
+    $page_name;                     #  the name of the page without the file extension.
+    $img_html_icon;                 #  HTML code for an icon image.
+    $editor_choice;                 #  the chosen editor for editing the page.
+    $lang;                          #  the language for the given page.
+    $page_code_main;                #  the main code for the given page.
+    $page_code_refactor_name;       #  the name of the refactored code file for the given page.
+    $page_code_refactor_name_check;  # Checks if the refactored code file for the given page exists.
+    $page_code_recommand_name;      #  the name of the code recommendations file for the given page.
+    $page_code_recommand_name_check; # Checks if the code recommendations file for the given page exists.
+    $page_code_info_name;            #  the name of the code information file for the given page.
+    $page_code_info_name_check;     # Checks if the code information file for the given page exists.
+    $page_recover;                  #  HTML code for recovering the code of the given page.
+    $page_refactor;                 #  HTML code for refactoring the code of the given page.
+    $page_create_new;               #  HTML code for creating a new file.
+    $editor_top_print;              #  HTML menu for displaying the page's code information, recommendations,  recovering, refactoring, and creating new files.
+
+    $code_dir_disk="$code_dir/$directory_id"; 
+
+    ##### find if the page is part of -  refactor recommand or info show all the other set
+    if ($page =~ /\.info|\.recommand|\.refactor/) { 
+        $page_name=$page;
+        $page_name =~ s/\.recommand|\.info|\.refactor//gi;
+        $page=$page_name;
+       }
+    
+    ########## main code page
+    $page_code_main=qq~ <td bgcolor="#d1d1e0" width="270px">$img_html_icon <a href="?$url_parameters&page=$page&edit=$editor_choice&lang=$lang"> $page </a> </td> ~;
+
+    ########## page refactor = if exist show it 
+    $page_code_refactor_name="$page.refactor";    ### write the refactor file name. 
+    $page_code_refactor_name_check=`ls $code_dir_disk/$page_code_refactor_name`;
+    #if (-e $code_dir2/$page_code_refactor_name) { $page_code_refactor=qq~ <a href="?page=$page_code_refactor_name">$page_code_refactor_name</a>  ~; }
+    if ($page_code_refactor_name_check) { $page_code_refactor=qq~ <td width="180px> $img_html_icon <a href="?$url_parameters&page=$page_code_refactor_name&edit=$editor_choice&lang=$lang">Code Refactor</a></td>  ~; }
+
+    ########## page recommand = if exist show it 
+    $page_code_recommand_name="$page.recommand";
+    $page_code_recommand_name_check=`ls $code_dir_disk/$page_code_recommand_name`;
+    if ($page_code_recommand_name_check) {$page_code_recommand=qq~ <td width="200px>$img_html_icon  <a href="?$url_parameters&page=$page_code_recommand_name&edit=$editor_choice&lang=$lang">Code Recommandations</a></td>  ~; }
+
+    ########## page code info - code description = if exist show it 
+    $page_code_info_name="$page.info";
+    $page_code_info_name_check=`ls $code_dir_disk/$page_code_info_name`;
+    if ($page_code_info_name_check) { $page_code_info=qq~<td width="180px> $img_html_icon <a href="?$url_parameters&page=$page_code_info_name&edit=$editor_choice&lang=$lang"> Info</a></td>  ~; }
+ 
+    $page_recover=qq~<td><a href="?$url_parameters&page=$page&edit=recover" title="recover the code" > $img_recovery </a></td> ~;   #### recover the code 
+    $page_refactor=qq~<td><a href="?$url_parameters&page=$page&edit=refactor" title="refactor the code" > $img_refactor </a></td> ~;   #### refactor the code
+    $page_create_new=qq~<td><a href="?$url_parameters&page=new_file_name.pl&edit=new" title="create new file" > $img_new_file </a></td> ~;   #### create new file - editor1
+
+    ####### create the top of editor2 with files names
+    $editor_top_print=qq~<table><tr> $page_code_main   $page_original  $page_code_refactor  $page_code_recommand   $page_code_info $page_recover $page_refactor $page_create_new </tr></table> ~;
+
+}
+
+sub editor_visual {  ##  not in use now ############ html cms editor
+    ################### editor ckeditor
+    print qq~
+    <br>EDIT  $page 
+    <form action="$url/dev7" METHOD="POST">
+    <textarea name="content" id="content" size="500" rows="800" cols="600">
+        $page_html 
+                </textarea>
+    </p>
+    </div>
+    <script src="https://cdn.ckeditor.com/4.13.0/standard/ckeditor.js"></script>
+    <script>
+        CKEDITOR.replace( 'content' );
+    </script>
+    <br><br>
+            Page name : <input type="text" id="save_page" name="save_page" size="50" value="$page">
+                    <input type="submit" value="Save">
+                    <input type="submit" value="Delete">
+            </form>
+    ~;
+}
+
+sub editor_text {    ####### visual edit for text and html
+    $page_html;
+    $page;
+    $url;
+
+    if ($page =~ "new_file"){  
+        $html_new_file=qq~ $html_top <font color=grey> Open new file; in Project:  $project_id  in Directory : $directory_id <br><br>   
+         - choose the code language: 
+        &nbsp; &nbsp; $img_python_icon &nbsp; &nbsp; $img_perl_icon &nbsp; &nbsp; $img_js_icon &nbsp; &nbsp; $img_sh_icon &nbsp; &nbsp; $img_html_icon or use .txt </font>
+        <br><br>
+        ~;
+    }
+
+    print qq~
+    $html_new_file
+    <br><font>$img_html_icon  $page &nbsp; &nbsp; &nbsp;  &nbsp; &nbsp; &nbsp; &nbsp; $page_code_refactor  $page_code_recommand $page_code_info</font> </b> </font>
+    <br> <br>
+    <div id="content" hidden data-html='' ></div>
+
+    <form action="$url/$file_name?$url_parameters/" METHOD="POST">
+        <textarea name="content" rows="20" cols="150" id="content" style="width: 100%; height: 50%; border: 0px solid grey">$page_html</textarea>
+        <br><br>
+        Page name : <input type="text" id="save_page" name="save_page" size="37" value="$page">
+            <input type="hidden" id="d" name="d" value="$directory_id">
+            <input type="submit" value="Save">
+            <input type="submit" value="Delete"> <br><br>
+            Commit changes : <input type="text" id="Commit" name="Commit" size="50" placeholder="Commit your code changes" >
+        </form>
+    ~;
+}
+
+sub editor_text_2 {   ###### editor2 monaco
+    $lang = $query->param('lang');  if(!$lang) {  $lang="css"; } 
+    $direcoty_save_file="/$directory_id";
+    
+    #    $page_html=~s/</&lt;/gi;
+    #    $page_html=~s/\`/&#96;/g;
+    #   $page_html=~s/\\/&#92;/g;
+    $page_html=~s/([\/\$\\\`])/\\$1/g;
+     @page_html=$page_html;
+   
+
+    print qq~
+    <style>
+        body {
+        font-family: "Helvetica", Sans-Serif;
+        background-color: #f5f4f4;
+     </style>
+
+       <link
+            rel="stylesheet"
+            data-name="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.37.0/min/vs/editor/editor.main.css"
+            href="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.37.0/min/vs/editor/editor.main.min.css"
+        />
+   
+    
+        $editor_top_print 
+        <div id="container" style="width: 100%; height: 96%; border: 0px solid grey"></div> 
+        <script>
+            var require = { paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.20.0/min/vs' } };
+        </script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.37.0/min/vs/loader.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.37.0/min/vs/editor/editor.main.nls.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.37.0/min/vs/editor/editor.main.js"></script>
+        <script src="https://code.jquery.com/jquery-3.6.3.min.js"></script>
+        <script>
+        
+      var editor;
+	document.addEventListener('DOMContentLoaded', function(){
+           editor = monaco.editor.create(document.getElementById('container'), {
+                value: [`@page_html`].join(''),
+                language: '$lang'
+            });  });
+
+    function save() { \$.ajax({
+        type: "POST",
+        url: "$url/$file_name",
+        data: {save_page:'$directory_id/$page', content:editor.getValue()},
+        success: function (data, status, xhr) {
+            console.log('status: ' + status + ', data: ' + data);
+        },
+        error: function (jqXhr, textStatus, errorMessage) {
+            console.log('Error' + errorMessage);
+        }});
+        
+        return false
+        }
+
+        </script>
+
+        <input type="text" id="save_page" name="save_page" size="37" value="$direcoty_save_file/$page">
+        <input type="submit" value="Save" id="save_page" name="save_page" onclick="save()">
+ ~;
+
+ $print_error.="/$directory_id/$page";
+}
+
+sub editor3 {  ###### editor3 monaco  black edition 
+
+    $lang = $query->param('lang');  if(!$lang) {  $lang="css"; } 
+    $direcoty_save_file="/$directory_id";
+    
+    #    $page_html=~s/</&lt;/gi;
+    #    $page_html=~s/\`/&#96;/g;
+    #   $page_html=~s/\\/&#92;/g;
+    $page_html=~s/([\/\$\\\`])/\\$1/g;
+     @page_html=$page_html;
+
+    print qq~     
+   <style>
+    body {
+        font-family: "Helvetica", Sans-Serif;
+        background-color: #1e1e1e;
+    }
+    .monaco-editor.vs-dark {
+        background-color: #1e1e1e;
+        color: #d4d4d4;
+    }
+    .monaco-editor.vs-dark .monaco-editor-background,
+    .monaco-editor.vs-dark .view-line {
+        color: #d4d4d4;
+    }
+    </style>
+
+    <link
+        rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.27.0/min/vs/editor/editor.main.min.css"
+    />
+
+    $editor_top_print 
+    <div id="container" class="monaco-editor vs-dark" style="width: 100%; height: 96%; border: 0px solid grey"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.27.0/min/vs/editor/editor.main.nls.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.27.0/min/vs/editor/editor.main.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.3.min.js"></script>
+
+    <script>
+        var editor;
+        document.addEventListener('DOMContentLoaded', function(){
+            var loaderScript = document.createElement('script');
+            loaderScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.27.0/min/vs/loader.min.js';
+            loaderScript.onload = function() {
+                require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.27.0/min/vs' }});
+                require(['vs/editor/editor.main', 'vs/basic-languages/perl/perl', 'vs/basic-languages/python/python'], function() {
+                    editor = monaco.editor.create(document.getElementById('container'), {
+                        value: [`@page_html`].join(''),
+                        language: '$lang',
+                        theme: 'vs-dark'
+                    });
+                });
+            };
+            document.head.appendChild(loaderScript);
+        });
+
+        function save() {
+            $.ajax({
+                type: "POST",
+                url: "$url/$file_name",
+                data: {save_page:'$directory_id/$page', content:editor.getValue()},
+                success: function (data, status, xhr) {
+                    console.log('status: ' + status + ', data: ' + data);
+                },
+                error: function (jqXhr, textStatus, errorMessage) {
+                    console.log('Error' + errorMessage);
+                }
+            });
+            return false;
+        }
+        </script>
+
+
+            <input type="text" id="save_page" name="save_page" size="37" value="$direcoty_save_file/$page">
+            <input type="submit" value="Save" id="save_page" name="save_page" onclick="save()">
+
+
+   ~;
+
+   $print_error.="/$directory_id/$page";
+}
+
+sub show_images {    ##### show the project images
+
+    print qq~ <br><br> Images: :  ~;
+    @images_list=`ls $html_path/images |grep -E 'jpg|png'`;
+        foreach(@images_list) {
+            chomp;
+            $counter++;
+            print qq~<img src="$images_url/$_" alt="$_" width="80" height="80"> $_  ~;         
+        }
+}
+
+sub recover_html {    #####  recover html from /BACKUP directory
+    $recover_file = $query->param('recover');   
+
+    if ($page) { $grep_file=qq~ | grep "$page" ~; }   ##### if there is $page find the recover file of the page
+    if ($recover_file eq "all") { $grep_file=qq~ ~; } 
+
+    @backup_list_file=`ls -ta $code_dir_backup/ $grep_file`;
+
+            foreach(@backup_list_file) {
+                    chomp;
+                    $counter++;
+                    $recover_file_name=$_;  $recover_file_name=~s/\+/ /gi; $recover_file_name=~s/html./html  /gi; $recover_file_name=~s/T/ /g;
+                    $recover.=qq~
+                       <font color=#DCDCDC> $counter </font> &nbsp; &nbsp; 
+                       <a href="?page=BACKUP/$_&edit=editor2">$img_html_icon  $recover_file_name </a>  
+                        <a href="index?page=BACKUP/$_" target="_blank"> $img_newwindow_icon </a> <br>  ~;
+            }
+
+
+    print qq~ <br><br>Files from recover for $page- choose the file and save as main file 
+              <br><br> $recover 
+              <br><br> can't find the file <a href="?edit=recover&recover=all"> press here </a> ~;
+
+}
+
+sub upload_images {    #### upload images/files - not in use
+
+
+            # define location where uploaded files will be stored, notice that permissions to write are needed for upload directory
+        $uploaddir = '$images_url';
+        $query = new CGI;
+
+        # parse the name of file
+        $filename = $query->param("file");
+
+        # Index where starts the file name   
+        $index = rindex($filename,"\\");
+
+        # Gets the directory  path name from the file name
+        $dirName = substr($filename, 0,$index+1);
+
+        # Check the directory name
+        if($dirName ne ""){
+
+        # Concat the directory path name        
+        $uploaddir =  $uploaddir . $dirName;
+
+        # Make the directory if it does not exist
+        if(! -d $uploaddir){
+                mkpath $uploaddir;
+        }
+        }
+
+        $filename =~ s/.*[\/\\](.*)/$1/;
+
+        # gets file handle
+        $upload_filehandle = $query->upload("file");
+
+        # reads contents and saves it out
+        open UPLOADFILE, ">$uploaddir/$filename" || &upload_error;
+
+        # tells Perl to write the file in binary mode, rather than in text mode.
+        binmode UPLOADFILE;
+
+        while ( <$upload_filehandle> ) {
+        print UPLOADFILE;
+        }
+
+        # close the file
+        close UPLOADFILE;
+
+        #print $query->header();
+        #print "RESP.100";
+
+        sub upload_error {
+        print INFO "****ES ERROR***\n";        
+        print "RESP.200";
+        exit;
+        }
+}
+
+sub refactor {        ### refactor and codereivew using chatgpt
+    ### refactor
+    $code_refactor_text=qq~Please refactor this code, add comment for every line: please add a list of all use parameters in this format - "\$the_parameter" ### description of the parameters," ~;
+    $code_recommand_text=qq~write if there any code libraries that are more efficient to use instead or any other suggestions for better coding this code, the code is: ~;
+    $code_info_text=qq~create summerze of the code, first lines create the purpose of the code, next line: how the code functions,  database, used files, next write list of use parameters with shut explanation next to it : ~;
+
+    chomp $refactor_code_text;
+    chomp $page_html;
+
+    ####### need to find in the page /// - it will replace instraction for code_refactor only all the 2 other are the same as text.. 
+
+    my @page_code_copy = $page_html;
+    foreach my $line (@page_code_copy) {
+       # chomp($line);
+         if ($line =~ /\\\\/)  {  $code_refactor_text_new .= "$line"; } ### look for the \\\ lines it is the new instraction dont use the regular instraction. 
+         else { $page_code_tmp.= "$line";}   ##### build the code with no \\\ lines
+         if ($line !~ /\\\\/)  {  $page_code_tmp.= "$line"; }
+    }
+
+    if ($code_refactor_text_new) { $code_refactor_text=$code_refactor_text_new;}  ### if ther are new instration for code refactor use the new instraction
+
+  ############################################################ refactor notworking
+    if ($page and $pass) {
+
+         ############# start the refactor proccess and write it into a new file name  -  $page_refactor.pl
+        open(GREP, ">$code_dir/refactor_tmp");
+        print GREP "$code_refactor_text\n $page_code_tmp\n";
+        close GREP;
+       
+        $page_refactor="$page.refactor";  
+        $chatgpt_api=`cat $code_dir/refactor_tmp | $path/chatgpt_api.pl  >  $code_dir_disk/$page_refactor &`;
+    
+        ################ recommandcode info
+        open(GREP, ">$code_dir/recommand_tmp");
+        print GREP "$code_recommand_text\n $page_html\n";  
+        close GREP;
+
+        $page_recommand="$page.recommand";  
+        #$chatgpt_api=`cat $code_dir/recommand_tmp | $path/chatgpt_api.pl  >  $code_dir_disk/$page_recommand &`;
+
+        ################ get info - documentation 
+        open(GREP, ">$code_dir/info_tmp");
+        print GREP "$code_info_text\n $page_html\n";
+        close GREP;
+
+        $page_info="$page.info";  
+        #$chatgpt_api=`cat $code_dir/info_tmp | $path/chatgpt_api.pl  >  $code_dir_disk/$page_info &`;
+
+        ######## write logs and data
+        $write_log_code_refactor_txt_instractions = "$code_dir_disk|$page_refactor|$date| $code_refactor_text_new";  #### write the log line information / file name | date | instractions. 
+        $write_log_code_refactor_txt_instractions =~s/\n//gi;
+        $log_refactor_instraction_file="log_refactor_instractions.log";   ## the file log name 
+
+        open(GREP, ">>$log_path/$log_refactor_instraction_file");
+        print GREP "$write_log_code_refactor_txt_instractions\n";
+        close GREP;
+
+      
+        #### print the page code
+        $print_html=$page_code_tmp;
+        #$print_html=~s/\n/<br>/gi;
+         $print_html =~s/\"//gi;
+        #$print_html =~ s/[^a-zA-Z0-9]//g;
+
+
+        print qq~   $html_top <br>
+
+
+            <h3 id="text"></h1>
+
+        <script>
+            function printLetterByLetter(text, element, callback) {
+                var i = 0;
+                element.innerHTML = "";
+
+                function type() {
+                    if (i < text.length) {
+                        element.innerHTML += text.charAt(i);
+                        i++;
+                        setTimeout(type, 20); // Adjust this value to control the speed of the text
+                    } else {
+                        if (callback) callback();
+                    }
+                }
+
+                type();
+        }
+
+        var textElement = document.getElementById("text");
+        var textToPrint = "Refactor & programing recommandation &  for the code file $page will take a few minutes.........";
+        printLetterByLetter(textToPrint, textElement);
+        </script>
+        
+        
+    
+        $print_html
+        <br>CODE_REFACTOR_TEXT_NEW - $code_refactor_text_new
+        <br><br> <font color=grey size=1px><i> page_code_TMP -  $page_code_tmp </i></font>
+        <br><br> <font color=blue size=1px><i>page_html - $page_html </i></font>
+        <br><br><center> $img_helper </center><br><br>
+        
+           
+
+        ~;
+
+
+        #$i = 1; while ($i <= 12) { print "coding part $i ..."; sleep(1); $i++; }
+
+        $tmp_read=`cat $code_dir/$page_refactor`;
+        ##### print the chatgpt api result
+        print qq~ 
+        <br><br>new Code refactor file : <a href="?$url_parameters&page=$page_refactor&edit=editor2&lang=perl"> $page_refactor </a> create 
+        <br><br>new code recommandation file : <a href="?$url_parameters&page=$page_recommand&edit=editor2&lang=perl"> $page_recommand </a> create
+        <br><br>new Code Documentation file : <a href="?$url_parameters&page=$page_info&edit=editor2&lang=perl"> $page_info </a> create
+        <br><br> api output :  $chatgpt_api  
+        <br><br> new file : <br>  $tmp_read~;
+    }
+}
+
+sub chatgpt_api {    #### chatgpt api with json
+
+    use JSON;
+
+    my $api_url     = "https://api.openai.com/v1/completions"; # https://api.openai.com/v1/edits";  ###   https://api.openai.com/v1/engines/davinci-codex/completions
+    #my $temperature = 0.5;  # A value between 0 and 1 that controls the level of randomness in the model's response.
+    my $temperature = 1;  # A value between 0 and 1 that controls the level of randomness in the model's response.
+    my $api_key     = "C"; # 
+    my $model       = "text-davinci-003";  # code-davinci-003    text-davinci-edit-001 code-davinci-003  davinci-codex
+
+    my $json = to_json( {
+                    model => $model,
+                    prompt => join("", <DATA>),
+                    temperature => $temperature,
+                    max_tokens => 2001
+            });
+    $json =~ s/'/'"'"'/g;
+
+    #print `/usr/bin/echo '$json'`; exit;
+    my $answer=`curl -s "$api_url" -H "Authorization: Bearer $api_key" -H "Content-Type: application/json" -H "Accept: application/json" --data '$json'`;
+    chomp $answer;
+
+    ##print "$answer\n";
+
+    eval {
+        my $json_answer = from_json($answer);
+        use Data::Dumper;
+        print Dumper($json_answer);
+    };
+    if ($@) {
+        print "$@\n";
+        print "$answer\n";
+    }
+
+
+}
+
+######################################################### project html
+sub html_elements {     #### load all the needed html element 
+ 
+ $html_top=qq~
+    <table width=100%> <tr bgcolor="#f6f8fa" ><td>
+    <center> <img src="https://megavast.com/images/logo-part.png" width="18" height="12">  $project  $project_id</center> ~;
+
+} 
+
+sub html_start {        #### html header
+
+    print qq~Content-Type: text/html 
+
+    <html><head>
+    <title>  $project $project_id $directory_id $page</title>
+    <link rel="icon" type="image/x-icon" href="https://megavast.com/images/logo-part.png">
+
+        <style>
+    body {
+    font-family: -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helvetica,Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji"; 
+    font-size: var(--body-font-size, 14px); 
+    line-height: 1;
+    background-color: #ffffff;
+    padding: 0px;
+    border-radius: 0px;
+    }
+
+    a:hover,
+    a:focus,
+    a:visited {
+        
+        outline: none;
+    }
+    a {
+        text-decoration: none;
+        font-size: 13px;
+        margin-right: 5px;
+        color:  #8c8cd9;
+    }
+    a > img {
+        width: 12px;
+        height: 12px;
+    }
+    textarea#content {
+        width: 100%;
+        line-height: 1.8;
+    }
+    textarea {
+        border-radius: 6px;
+        padding: 12px 20px;
+        box-sizing: border-box;
+        border: 2.1px solid #f0f0f5;
+        border-radius: 1px;
+        background-color: #ffffff;
+        font-size: 12px;
+    }
+    font a {
+      
+        background-color: #;
+        padding: 1px 24px;
+        border: 1px solid #;
+        border-radius: 1px;
+        font-size: 14px;
+    }
+    input#save_page {
+        padding: 4px;
+        margin-right: 15px;
+    }
+    input[type="submit"] {
+        padding: 4px 7px;
+        margin-right: 5px;
+    }
+
+
+          .table-container {
+            width: 70%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            border-collapse: collapse;
+            
+          }
+          
+          .table {
+            width: 100%;
+            margin-bottom: 0;
+            border-spacing: 0;
+            border: 1px solid #f0f0f0;
+            background-color: #ffffff;
+            border-radius: 25px;
+          }
+         
+          .table td {
+        padding: 5px 24px;
+          border: 0.5px solid #f0f2f5;
+          }
+          
+          .table th {
+            font-weight: 600;
+            background-color: #ffffff; 
+             border: 0.5px solid #f0f2f5; 
+          }
+          
+          .table td {
+            background-color: #ffffff;
+            vertical-align: middle; 
+          }
+
+          .table tr {
+            background-color: #ffffff;
+            vertical-align: middle;
+          }
+
+          .table tr:nth-child(even) td {
+            background-color: #ffffff;
+              border: 0.5px solid #f0f2f5;
+          }
+
+          .table tr rd {
+            background-color: #ffffff;
+              border: 0.5px solid #f0f2f5;
+          }
+          
+          .table-hover tbody tr:hover td {
+            background-color: #f1f8ff;
+          }
+          
+          .no-data {
+            text-align: center;
+            padding: 20px;
+            font-style: italic;
+          }
+       
+    </style>
+
+
+    
+    ~;
+}
+
+sub print_menu {        #### top menu of CMS From html directory: $pages_list2 <br><br>
+
+   print qq~
+
+    </head><body>  
+    <table width=100%> <tr bgcolor="#f6f8fa" ><td>
+    <center> $project_id <img src="https://megavast.com/images/logo-part.png" width="18" height="12">   $project   </center>  
+    <div> <font color=black> <br><br><br>
+  
+     <a href="$file_name?$url_parameters&page=new_file_name.pl&edit=new">$img_new_file NEW FILE </a> 
+     <a href="$file_name?$url_parameters&page=$page&edit=editor2">$img_html_icon  EDITOR </a> 
+     <a href="$file_name?$url_parameters&page=$page&edit=refactor" title="Refactor and code-review the code"> $img_refactor  REFACTOR CODE</a>    
+    <a href="$file_name?$url_parameters&page=$page&edit=recover"> $img_recovery  RECOVER FILE </a>  
+    <a href="$file_name?$url_parameters&page=$page&edit=search"> SERACH IN FILES </a> 
+    <a href="$file_name?$url_parameters&page=$page&edit=tools"> TOOLS </a> 
+    
+    </div></td></tr>
+    <tr><td height="1" bgcolor="#e3e3e3"></td><tr>
+    </table>
+    
+    <table><tr valign="top"><BR> <BR><td width=30px></td><td width=1000px>
+        <div class="divTable" style="width: 78%;" align="left"> <div> 
+          <table class="table table-hover"><thead><tr><td> <font color=orange> <b> \\\\\\ </b></font>
+          <font color="black" size=2px> $print_header_directory</font></th><td> 
+           </td></tr></thead>
+            <tbody>
+
+      $pages_list 
+    </tbody></table> 
+    </td><td width=12%>
+    <a href=""> Readme </a><br>
+    <a href=""> $directory_counter Directory  </a> <br>
+    <a href=""> 2 stars </a> <br>
+    <a href="">  1 watching </a><br>
+    <a href="">  3 forks  </a><br>
+    <br><br>  $img_helper </td></tr>
+
+    </table>
+    <table width=75%  STYLE:BORDER=1><tr><td width="60"></td>
+    <td> <br><br> $readme_md    </td></tr></table>
+    ~;
+}
+
+sub print_left_menu {   #### left menu - visual studio -
+        print qq~ 
+
+    <style>
+    
+    .sidebar {
+    height: 100%;
+    width: 45px;
+    position: fixed;
+    z-index: 1;
+    top: 0;
+    left: 0;
+    background-color: #2c2c2c;
+    overflow-x: hidden;
+    padding-top: 50px;
+    }
+
+    .sidebar a {
+    padding: 16px 8px 6px 6px;
+    text-decoration: none;
+    font-size: 20px;
+    color: #818181;
+    display: block;
+    }
+
+    .sidebar a:hover {
+    color: #f1f1f1;
+    }
+
+    .main {
+    margin-left: 37px; /* Same as the width of the sidenav */
+    padding: 0px 4px;
+    }
+
+    @media screen and (max-height: 450px) {
+    .sidebar {padding-top: 15px;}
+    .sidebar a {font-size: 18px;}
+    }
+    </style>
+
+    <style>
+
+    .sidenav {
+    display: none;
+    height: 100%;
+    width: 340px;
+    position: fixed;
+    z-index: 1;
+    top: 0;
+    left: 48;
+    background-color: #f3f3f3;
+    overflow-x: hidden;
+    padding-top: 20px;
+    }
+
+    .sidenav a {
+    padding: 8px 0px 0px 0px;
+    text-decoration: none;
+    font-size: 14px;
+    color: #818181;
+    display: block;
+    }
+
+    .sidenav a:hover {
+    color: #000000;
+    }
+
+    .sidenav .closebtn {
+    position: absolute;
+    top: 0;
+    right: 25px;
+    font-size: 22px;
+    margin-left: 50px;
+    }
+
+    @media screen and (max-height: 450px) {
+    .sidenav {padding-top: 12px;}
+    .sidenav a {font-size: 12px;}
+    }
+    </style>
+
+    <div class="sidebar">
+    <a href="$file_name?d=$project_id" title="Project $project_id"> <i> <img src="https://megavast.com/images/logo-part.png" width="22" height="18"></i> </a>
+    <a href="$file_name?$url_parameters&page=$page&edit=home&lang=$lang"  title="Librery $directory_id under project $project_id files"> <i> <img src="https://www.adadw.com/editor/1.png" width="22" height="18"></i> </a>
+    <a href="#contact" title="Open Directory $directory_id pages list"> <span onclick="openNav()"> <i><img src="https://www.adadw.com/editor/2.png" width="22" height="22"></i></span></a>
+    <a href="$file_name?$url_parameters&page=$page&edit=editor2&lang=$lang" title="Edit $page with the editor"> <i><img src="https://www.adadw.com/editor/7.png" width="22" height="22"></i></a>
+    <a href="$file_name?$url_parameters&page=$page&edit=search" title="Search in files"> <i><img src="https://www.adadw.com/editor/3.png" width="22" height="22"></i></a>
+    <a href="$file_name?$url_parameters&page=$page&edit=recover" title="Recover files for page - $page"> <i><img src="https://www.adadw.com/editor/4.png" width="22" height="22"></i></a>
+    <a href="$file_name?$url_parameters&page=$page&edit=refactor" title="Refactor and code-review the code $page"> <i><img src="https://www.adadw.com/editor/5.png" width="22" height="22"></i></a>
+    <a href="$file_name?$url_parameters&page=$page&edit=images" title="Manage Exstenstions"> <i><img src="https://www.adadw.com/editor/6.png" width="22" height="22"></i></a>
+    <a href="$file_name?$url_parameters&page=$page&edit=tools" title="Use tools"> <i><img src="https://www.adadw.com/editor/7.png" width="22" height="22"></i></a>
+    <a href="https://github.dev/Shaharch2016/perl_codes/blob/" title="GitHub Sync"> <i><img src="https://www.adadw.com/editor/8.png" width="22" height="22"></i></a>
+    </div>
+
+    <div class="main">
+
+
+
+    <div id="mySidenav" class="sidenav">
+    <a href="javascript:void(0)" class="closebtn" onclick="closeNav()">X</a>
+    $pages_list3
+    </div>
+
+    <script>
+    function openNav() {
+    document.getElementById("mySidenav").style.display = "block";
+    }
+
+    function closeNav() {
+    document.getElementById("mySidenav").style.display = "none";
+    }
+    </script>
+
+        ~;
+    ## <a href="$file_name?page=$page&edit=text&lang=$lang"" title="Edit page $page text editor"> <i><img src="https://www.adadw.com/editor/7.png" width="22" height="22"></i></a> text old editor - dont need here 
+
+}
+
+sub print_bottom {      #### print html bottom
+
+    print "$print_error";
+    print qq~   
+    </body></html>  ~;
+}
+
+sub html_images {       #### load the project images also print $print_error - for errors
+    ##### delete_file.png  js.png       new_dir.png   perl.png        python.png    refactor.png  sh.png
+    ##### helper.png       librery.png  new_file.png  properties.png  recovery.png  refresh.png
+
+    my @all_icons = ("delete_file.png", "js.png", "new_dir.png", "perl.png", "python.png", "refactor.png", "sh.png", "helper.png", "library.png", "new_file.png", "properties.png", "recovery.png", "refresh.png");
+
+    foreach my $icon (@all_icons){
+        #$img_\$icon = qq~ <img src="$images_url/icons/$icon" width="21" height="21">~;
+    }
+
+    $img_html_icon=qq~ <img src="https://static.thenounproject.com/png/13694-200.png" width="11" height="9"> ~;
+    $img_newwindow_icon=qq~ <img src="https://static.thenounproject.com/png/299638-200.png" width="11" height="11">~; 
+    $img_perl_icon=qq~ <img src="$images_url/icons/perl.png" width="" height="">~;
+    $img_python_icon=qq~ <img src="$images_url/icons/python.png" width="" height="">~;
+    $img_sh_icon=qq~ <img src="$images_url/icons/sh.png" width="" height="">~;
+    $img_js_icon=qq~ <img src="$images_url/icons/js.png" width="21" height="21">~;
+    $img_new_file=qq~ <img src="$images_url/icons/new_file.png" width="18" height="18">~;
+    $img_recovery=qq~ <img src="$images_url/icons/recovery.png" width="18" height="18">~;
+    $img_refactor=qq~ <img src="$images_url/icons/refactor.png" width="18" height="18">~;
+    $img_helper=qq~ <img src="$images_url/icons/helper2.png" width="200" height="200" title="My Name is Vast, I am your praivet coder assistance, let's build somthing">~;
+    $img_librery=qq~ <img src="$images_url/icons/librery.png" width="21" height="21">~;
+   
+}
+
+sub form_save  {        #### form save page + backup the old page to $path/HTML/BACKUP/ file_name.html.date.time
+    $save_page = $query->param('save_page');
+    $content = $query->param('content'); chomp $content;
+
+    if ($save_page){
+        #### backup for recover the file.data  
+        $file=`cp $code_dir/$directory_id/$save_page /var/www/cgi-bin/MEGAVAST/CMS/CODE/BACKUP/$save_page.$date`;
+        
+        open(GREP, ">$code_dir/$directory_id/$save_page");
+        print GREP "$content\n";
+        close GREP;
+
+        print qq~<br><br> 
+         $img_html_icon <a href="?$url_parameters&page=$save_page&edit=editor2"> Press here to move into the Editor </a><br><br>
+          File $save_page was backup as $code_dir/BACKUP/$save_page.$date <br><br> and saved as - $save_page   -->
+          <meta http-equiv="Refresh" content="0; url='?$url_parameters&page=$save_page&edit=editor2'" />~;
+
+        $print_error.="save_page $code_dir/$directory_id/$save_page";
+    }
+
+}
+
+sub print_tools {       ##### print list of tools for use
+
+    print qq~ <b> Tools for use - </b><br><br><br>
+    Search codes engin - with github stackoverflow etc.. - <a href="https://codesearch.aixcoder.com/en/#/">$img_newwindow_icon </a> <br><br>
+     Photoshop Online - <a href="https://www.photopea.com/" target="_blank"> $img_newwindow_icon </a> <br><br>
+    Html live tests editor<a href="https://www.w3schools.com/cssref/tryit.php?filename=" target="_blank"> $img_newwindow_icon </a> <br><br>
+    
+    ~;
+}
+
+sub print_search {       #### search result from the html directory
+
+     $search = $query->param('search');
+
+    print qq~ 
+    <br><br> <form action="$url/$file_name?edit=search" METHOD="POST">
+           Search on HTML pages : 
+           <input type="text" id="search" name="search" size="50" value="$search">
+            <input type="hidden" id="edit" name="edit" value="search" />
+            <input type="submit" value="Search">
+            </form> ~;
+
+
+    if ($search){  
+        @search_result=`grep "$search" $path/HTML/*`;
+
+        foreach (@search_result){ 
+            chomp;
+            $_=~s/\/n/<br><br>/gi;
+            $_=~s/$html_dir\//<br><br><a href=cms?edit=home&page=/gi;
+            $_=~s/: /"> edit html <\/a>"/gi;
+            $search_result_html.=qq~ $_ ~;
+        }
+        
+        print qq~ <b> Search result for - $search :  </b> <br><br> $search_result_html  ~;
+    }
+}
+
+sub readme_md {          ## fix the text in readme.md for printing
+
+    if ($readme_md) {
+
+    my @readme_md = split(/\n/, $readme_md); ## Split the file into an array of lines
+    my $code_block = 0;         ## Keep track of whether we are in a code block
+    foreach my $line (@readme_md){
+        if ($line =~ /^```/) {  ## Start or end of a code block
+            $code_block = !$code_block; ## Toggle the code block flag
+            $line = '';         ## Remove the line with the triple backticks
+        } elsif ($code_block) { ## Inside a code block
+            ## Use as-is
+        } else { ## Regular text
+            $line =~ s/^# (.*)/<h1><font color="#609aff">$1<\/font><\/h1>/g;
+            $line =~ s/^## (.*)/<h2>$1<\/h2>/g;
+            $line =~ s/^### (.*)/<h3>$1<\/h3>/g;
+            $line =~ s/^#### (.*)/<h4>$1<\/h4>/g;
+            $line =~ s/^##### (.*)/<h5>$1<\/h5>/g;
+            $line =~ s/^###### (.*)/<h6>$1<\/h6>/g;
+            $line =~ s/\*\*(.*?)\*\*/<strong>$1<\/strong>/g; ## Use non-greedy matching to avoid matching across lines
+            $line =~ s/\*(.*?)\*/<em>$1<\/em>/g;             ## Use non-greedy matching to avoid matching across lines
+            $line =~ s/\`(.*)\`/<code>$1<\/code>/g;
+            $line =~ s/\[(.*?)\]\((.*?)\)/<a href="$2">$1<\/a>/g;    ## Add support for links
+            $line =~ s/!\[(.*?)\]\((.*?)\)/<img src="$2" alt="$1">/g; ## Add support for images
+             $line =~ s/\[([^\[\]]+)\]\(([^)]+)\)/<a href="?$2">$1<\/a>/g; ## Add support for links
+             $line =~ s/<a href=".\//<a href="?d=$directory_id&edit=editor2&page=/g;  ### change to other load file 
+
+        }
+    }
+    $readme_md = join("<br>", @readme_md); ## Join the array back into a single string with "<br>" as the separator
+    $readme_md .= "<br><br>-----------------";           ## Add a marker to indicate end of file (optional)
+    }
+
+}
+
+sub load_wizard { 
+
+    $wizard_html=`cat $code_dir/DEV7_Project/dev7_open_project.html`;
+
+    print "$wizard_html";
+
+    print qq~ 
+       <script>
+        
+   
+
+    function save() { \$.ajax({
+        type: "POST",
+        url: "$url/$file_name",
+        data: {save_page:'$directory_id/$page', content:editor.getValue()},
+        success: function (data, status, xhr) {
+            console.log('status: ' + status + ', data: ' + data);
+        },
+        error: function (jqXhr, textStatus, errorMessage) {
+            console.log('Error' + errorMessage);
+        }});
+        
+        return false
+        }
+
+        </script>
+    choose an file name and code languwuch(.py / .php  / .text / .sh /  etc....): 
+    <input type="text" id="save_page" name="save_page" size="37" value="$direcoty_save_file/$page">
+        <button type="submit" value="Save" id="save_page" name="save_page" onclick="save()">Start the project</button> ~;
+}
+
+1;
